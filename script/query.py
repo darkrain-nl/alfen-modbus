@@ -17,7 +17,7 @@ from modbus_connection.cli_helper import (
 )
 from modbus_connection.model import Component
 
-from alfen_modbus import AlfenCharger, Socket
+from alfen_modbus import AlfenCharger, Pollable, Socket
 
 # The station speaks Modbus TCP only.
 CONNECTIONS = (("tcp", None),)
@@ -32,6 +32,13 @@ EXAMPLES = """examples:
 def _error(err: ModbusError) -> str:
     # A timeout arrives with no message of its own.
     return str(err) or type(err).__name__
+
+
+def _title(component: Pollable) -> str:
+    # Both sockets share a class, so only their number tells them apart.
+    if isinstance(component, Socket):
+        return f"socket {component.number}"
+    return type(component).__name__
 
 
 def _socket_components(socket: Socket | None) -> list[tuple[str, Component]]:
@@ -83,7 +90,8 @@ async def main() -> int:
 
     charger = AlfenCharger(connection.for_unit)
     try:
-        report = await charger.async_update()
+        await charger.async_setup()
+        report = await charger.async_update(charger.components)
         # Per component: both sockets serve the same addresses.
         raw = (
             {
@@ -105,8 +113,8 @@ async def main() -> int:
     print(f"\nLocal time      {charger.clock.local_time}")
     if report.failed:
         print("\nFailed to read:")
-        for name, error in report.failed.items():
-            print(f"  {name}: {_error(error)}")
+        for failed, error in report.failed.items():
+            print(f"  {_title(failed)}: {_error(error)}")
     if raw is not None:
         print("\nRaw registers")
         print(json.dumps(raw, indent=2))
