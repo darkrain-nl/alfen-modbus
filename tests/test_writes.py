@@ -7,6 +7,8 @@ from modbus_connection.mock import MockModbusConnection, MockModbusUnit
 
 from alfen_modbus import AlfenCharger, ChargingPhases
 
+from .conftest import poll_all
+
 
 @pytest.mark.parametrize("amps", [0.0, 6.0, 13.5, 32.0])
 async def test_socket_max_current(
@@ -14,7 +16,7 @@ async def test_socket_max_current(
 ) -> None:
     charger = AlfenCharger(connection.for_unit)
     await charger.socket_1.status.async_write_max_current(amps)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.socket_1.status.max_current == amps
 
 
@@ -58,10 +60,10 @@ async def test_scn_max_currents(
     writes: list[object] = []
     station.on_write(writes.append)
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.scn is not None
     await charger.scn.async_write_max_currents(10.0, 0.0, 32.0)
-    await charger.async_update()
+    await poll_all(charger)
     assert len(writes) == 1
     assert (
         charger.scn.max_current_l1,
@@ -74,7 +76,7 @@ async def test_scn_max_currents_rejected(
     connection: MockModbusConnection, station: MockModbusUnit
 ) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.scn is not None
     writes: list[object] = []
     station.on_write(writes.append)

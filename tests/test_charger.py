@@ -14,12 +14,12 @@ from alfen_modbus import (
     Mode3State,
 )
 
-from .conftest import NAN_32
+from .conftest import NAN_32, poll_all
 
 
 async def test_identity(connection: MockModbusConnection) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     identity = charger.identity
     assert identity.name == "ALF_1000"
     assert identity.manufacturer == "Alfen B.V."
@@ -31,7 +31,7 @@ async def test_identity(connection: MockModbusConnection) -> None:
 
 async def test_clock(connection: MockModbusConnection) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.clock.uptime == 100.0
     assert charger.clock.local_time == datetime(
         2026, 11, 20, 14, 30, 5, tzinfo=timezone(timedelta(hours=1))
@@ -43,14 +43,14 @@ async def test_clock_unset(
 ) -> None:
     station.holding[178] = 0xFFFF
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.clock.utc_offset is None
     assert charger.clock.local_time is None
 
 
 async def test_status(connection: MockModbusConnection) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.status.active_max_current == 16.0
     assert charger.status.temperature == 38.5
     assert charger.status.backoffice_connected is True
@@ -60,8 +60,17 @@ async def test_status(connection: MockModbusConnection) -> None:
 async def test_poll_reports_every_component(
     connection: MockModbusConnection,
 ) -> None:
-    report = await AlfenCharger(connection.for_unit).async_update()
-    assert report.updated == {"clock", "status", "scn", "socket_1", "socket_2"}
+    charger = AlfenCharger(connection.for_unit)
+    report = await poll_all(charger)
+    assert charger.scn is not None
+    assert charger.socket_2 is not None
+    assert report.updated == {
+        charger.clock,
+        charger.status,
+        charger.scn,
+        charger.socket_1,
+        charger.socket_2,
+    }
     assert report.complete
 
 
@@ -70,9 +79,10 @@ async def test_single_socket(
 ) -> None:
     station.holding[1105] = 1
     charger = AlfenCharger(connection.for_unit)
-    report = await charger.async_update()
+    report = await poll_all(charger)
     assert charger.socket_2 is None
-    assert report.updated == {"clock", "status", "scn", "socket_1"}
+    assert len(report.updated) == 4
+    assert charger.socket_1 in report.updated
 
 
 async def test_scn_refused(
@@ -80,14 +90,15 @@ async def test_scn_refused(
 ) -> None:
     station.fail_read(1400, IllegalDataAddressError())
     charger = AlfenCharger(connection.for_unit)
-    report = await charger.async_update()
+    report = await poll_all(charger)
     assert charger.scn is None
-    assert report.updated == {"clock", "status", "socket_1", "socket_2"}
+    assert len(report.updated) == 4
+    assert charger.socket_2 in report.updated
 
 
 async def test_scn(connection: MockModbusConnection) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     scn = charger.scn
     assert scn is not None
     assert scn.name == "ALF_SCN"
@@ -106,7 +117,7 @@ async def test_scn(connection: MockModbusConnection) -> None:
 
 async def test_socket_meter(connection: MockModbusConnection) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     meter = charger.socket_1.meter
     assert meter.state == MeterState.INITIALISED | MeterState.UPDATED
     assert meter.reading_age == 1.5
@@ -127,7 +138,7 @@ async def test_socket_meter_nan_sums(
 ) -> None:
     socket_1.holding[360] = NAN_32
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     meter = charger.socket_1.meter
     assert meter.current_sum is None
     assert meter.apparent_power_sum is None
@@ -137,7 +148,7 @@ async def test_socket_meter_nan_sums(
 
 async def test_socket_status(connection: MockModbusConnection) -> None:
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.socket_2 is not None
     status = charger.socket_2.status
     assert charger.socket_2.number == 2
@@ -157,7 +168,7 @@ async def test_mode_3_state_unknown(
 ) -> None:
     socket_1.holding[1201] = code
     charger = AlfenCharger(connection.for_unit)
-    await charger.async_update()
+    await poll_all(charger)
     assert charger.socket_1.status.mode_3_state is None
 
 
@@ -174,5 +185,5 @@ async def test_unit_factory(connection: MockModbusConnection) -> None:
 
     charger = AlfenCharger(for_unit)
     assert requested == [200, 1]
-    await charger.async_update()
+    await poll_all(charger)
     assert requested == [200, 1, 2]

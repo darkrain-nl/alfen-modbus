@@ -6,6 +6,8 @@ import pytest
 from modbus_connection.encode import encode_float32, encode_float64
 from modbus_connection.mock import MockModbusConnection, MockModbusUnit
 
+from alfen_modbus import AlfenCharger, PollReport
+
 NAN_32 = [0x7FC0, 0x0000]
 NAN_64 = [0x7FF8, 0x0000, 0x0000, 0x0000]
 
@@ -95,3 +97,9 @@ def station(connection: MockModbusConnection) -> MockModbusUnit:
 def socket_1(connection: MockModbusConnection) -> MockModbusUnit:
     """The unit serving the first socket."""
     return connection.for_unit(1)
+
+
+async def poll_all(charger: AlfenCharger) -> PollReport:
+    """Set the charger up and poll every sub-system it has."""
+    await charger.async_setup()
+    return await charger.async_update(charger.components)

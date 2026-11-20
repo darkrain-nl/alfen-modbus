@@ -39,8 +39,10 @@ async def main() -> None:
     connection = await connect_tcp("192.168.1.60")
     charger = AlfenCharger(connection.for_unit)
     try:
-        report = await charger.async_update()  # the first poll sets up
+        await charger.async_setup()  # reads the identity, finds socket 2
         print(charger.identity.serial_number, charger.identity.platform_type)
+        report = await charger.async_update(charger.components)
+        print(charger.socket_1 in report.updated)
         status = charger.socket_1.status
         print(status.mode_3_state, status.actual_max_current)
         print(charger.socket_1.meter.real_power_sum)
@@ -52,8 +54,16 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`async_update()` returns an `UpdateReport` naming the sub-systems that refreshed
-and the ones that failed. A value the station reports as NaN decodes to `None`.
+`async_update()` polls the sub-systems you pass, so a caller that only needs
+the sockets passes `(charger.socket_1, charger.socket_2)` and skips the rest.
+`charger.components` lists every sub-system the station has; it raises until
+`async_setup()` has run, since only setup knows about socket 2 and the SCN.
+
+The returned `PollReport` is keyed by those same objects: `updated` holds the
+ones that refreshed and `failed` maps the rest to their error. A lost connection
+raises, and so does a timeout before anything has answered.
+
+A value the station reports as NaN decodes to `None`.
 Stations with a Reallin meter (built from 2021) leave four sums NaN:
 `current_sum`, `apparent_power_sum`, `reactive_power_sum` and
 `real_energy_consumed_sum`. Older ABB meters fill them all.
