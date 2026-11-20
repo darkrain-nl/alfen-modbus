@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alfen-modbus"
+version = "0.0.0"
+description = "Read and control Alfen EV charging stations over Modbus TCP as typed Python objects."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "alfen-modbus contributors" }]
+keywords = ["modbus", "alfen", "eve", "ev-charger", "charging-station", "home-assistant"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+    "Typing :: Typed",
+]
+# Callers inject the connection; tmodbus is the backend the CLI uses.
+dependencies = ["modbus-connection[tmodbus]>=4.12.7"]
+
+[project.urls]
+Homepage = "https://github.com/darkrain-nl/alfen-modbus"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.11",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/alfen_modbus"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "--cov --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["alfen_modbus"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:"]
+
+[tool.ruff]
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "D", "SIM", "RET", "PL"]
+# Docstrings name things, like modbus-connection's; class covers D107.
+ignore = ["D107", "D401", "PLR2004"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name documents it; a docstring is only for a needed why.
+"tests/*" = ["D100", "D103", "D104"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests", "script"]
+strict = true
