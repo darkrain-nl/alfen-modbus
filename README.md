@@ -37,7 +37,7 @@ from alfen_modbus import AlfenCharger
 
 async def main() -> None:
     connection = await connect_tcp("192.168.1.60")
-    charger = AlfenCharger(connection)
+    charger = AlfenCharger(connection.for_unit)
     try:
         report = await charger.async_update()  # the first poll sets up
         print(charger.identity.serial_number, charger.identity.platform_type)
@@ -53,8 +53,10 @@ asyncio.run(main())
 ```
 
 `async_update()` returns an `UpdateReport` naming the sub-systems that refreshed
-and the ones that failed. A value the station reports as NaN decodes to `None`;
-newer meters leave several sums NaN.
+and the ones that failed. A value the station reports as NaN decodes to `None`.
+Stations with a Reallin meter (built from 2021) leave four sums NaN:
+`current_sum`, `apparent_power_sum`, `reactive_power_sum` and
+`real_energy_consumed_sum`. Older ABB meters fill them all.
 
 ### What it covers
 
