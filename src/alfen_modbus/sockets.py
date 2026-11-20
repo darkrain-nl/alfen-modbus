@@ -22,10 +22,7 @@ from .model import NAN, validate_max_current
 
 
 class SocketMeter(Component):
-    """Measurements of the energy meter behind one socket.
-
-    Newer meters leave the sums NaN, which decode to ``None``.
-    """
+    """Measurements of the energy meter behind one socket."""
 
     state = flags(300, MeterState, nan=NAN)
     reading_age = uint64(301, scale=0.001, unit="s")
@@ -40,7 +37,7 @@ class SocketMeter(Component):
     current_l1 = float32(320, unit="A")
     current_l2 = float32(322, unit="A")
     current_l3 = float32(324, unit="A")
-    current_sum = float32(326, unit="A")
+    current_sum = float32(326, unit="A")  # NaN on Reallin meters
     power_factor_l1 = float32(328)
     power_factor_l2 = float32(330)
     power_factor_l3 = float32(332)
@@ -53,11 +50,11 @@ class SocketMeter(Component):
     apparent_power_l1 = float32(346, unit="VA")
     apparent_power_l2 = float32(348, unit="VA")
     apparent_power_l3 = float32(350, unit="VA")
-    apparent_power_sum = float32(352, unit="VA")
+    apparent_power_sum = float32(352, unit="VA")  # NaN on Reallin meters
     reactive_power_l1 = float32(354, unit="var")
     reactive_power_l2 = float32(356, unit="var")
     reactive_power_l3 = float32(358, unit="var")
-    reactive_power_sum = float32(360, unit="var")
+    reactive_power_sum = float32(360, unit="var")  # NaN on Reallin meters
     real_energy_delivered_l1 = float64(362, unit="Wh")
     real_energy_delivered_l2 = float64(366, unit="Wh")
     real_energy_delivered_l3 = float64(370, unit="Wh")
@@ -65,7 +62,7 @@ class SocketMeter(Component):
     real_energy_consumed_l1 = float64(378, unit="Wh")
     real_energy_consumed_l2 = float64(382, unit="Wh")
     real_energy_consumed_l3 = float64(386, unit="Wh")
-    real_energy_consumed_sum = float64(390, unit="Wh")
+    real_energy_consumed_sum = float64(390, unit="Wh")  # NaN on Reallin
     apparent_energy_l1 = float64(394, unit="VAh")
     apparent_energy_l2 = float64(398, unit="VAh")
     apparent_energy_l3 = float64(402, unit="VAh")

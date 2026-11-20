@@ -81,7 +81,7 @@ async def main() -> int:
         print(f"Could not connect to {args.target}: {_error(err)}")
         return 1
 
-    charger = AlfenCharger(connection)
+    charger = AlfenCharger(connection.for_unit)
     try:
         report = await charger.async_update()
         # Per component: both sockets serve the same addresses.
