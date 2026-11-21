@@ -178,20 +178,34 @@ change that breaks the public API needs a major version.
 
 `script/query.py` reads one station once and prints every value it serves,
 which is the quickest way to see whether a station is reachable, has Modbus
-switched on, and is detected with the sockets you expect. It writes nothing.
+switched on, and is detected with the sockets you expect. It writes nothing
+unless given `--hold`.
 
 ```bash
 # every value, per component
 uv run script/query.py 192.168.1.60
 # every register read as well, undecoded, for an issue report
 uv run script/query.py 192.168.1.60 --raw
+# settle the open questions; needs no working register map
+uv run script/query.py 192.168.1.60 --probe
+# any range, undecoded: unit 200, registers 1100 to 1105
+uv run script/query.py 192.168.1.60 --registers 200:1100:6
+# WRITES: hold 10 A on socket 1 for 3 minutes, then let it lapse
+uv run script/query.py 192.168.1.60 --hold 10 --seconds 180
 ```
 
 A station that answers nothing at all may still have **Allow reading** off
 (see [Station setup](#station-setup)). Components that failed are listed after
 the values, with their error. `--raw` adds every register it read as
 JSON, which is the most helpful thing to include in an issue about a wrong
-value.
+value. `--registers UNIT:ADDR[:COUNT]` reads any range, up to 125 registers,
+and still runs when setup fails.
+
+`--hold AMPS` needs **Allow writing maximum currents**. It holds the max current
+on `--socket` (1 by default) for `--seconds`, polling every `--interval`
+(10 s), then releases it and keeps polling until the station falls back to its
+safe current. Each line shows the setpoint, the time it has left, the applied
+current and whether the station accounted for it; `renewed` marks a resend.
 
 ## Open questions
 
@@ -203,8 +217,14 @@ library follows the integration until a live station settles it:
 - **Word order.** The guide says 32-bit values send the low word first; the
   library reads the high word first.
 
-Either one being wrong shows up plainly in `query.py`'s output, as values that
-make no sense for the station.
+`query.py --probe` settles both in one run, without the library's map having
+to work: it reads known strings and numbers both one register lower and as
+listed, and decodes each number in both word orders. Addressing comes first,
+from the strings: under the wrong guess a string loses its first two
+characters or starts with a junk word. A float whose low word is zero, such as
+16.0, can read right under both guesses, so only the strings decide it. Under
+the right addressing, one word order gives plausible numbers and the other
+absurd ones.
 
 ## Register map source
 
