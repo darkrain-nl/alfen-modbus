@@ -122,6 +122,29 @@ library sets no upper bound: the station caps a setpoint at its installation
 limit. Don't use `status.active_max_current` or `SocketStatus.actual_max_current`
 as a UI ceiling either. Both follow the setpoint, so the slider would ratchet down.
 
+### Holding a setpoint
+
+A written max current only lasts the validity time set in ACE Service
+Installer (60 s by default); then the station falls back to its safe current.
+No register reports the validity time itself, only how much of it is left. To
+keep a setpoint in force, hold it instead of writing it:
+
+```python
+await charger.socket_1.status.async_hold_max_current(16.0)
+# ... every poll now resends it in time
+charger.socket_1.status.release_max_current()  # lapses to the safe current
+```
+
+Each `async_update()` that polls a socket with a held setpoint compares the time
+left against the gap since the previous poll, and resends while one more poll
+would still arrive before the setpoint lapses. It also resends when the station
+no longer reports the held value, as after a reboot. Any poll interval works,
+provided it is shorter than the validity time. A failed resend is listed in the
+report's `rewrite_failed`, apart from the reads in `failed`.
+`held_max_current` is the value held, or `None`. The SCN has the same for its
+three phases: `async_hold_max_currents(l1, l2, l3)`, `held_max_currents` and
+`release_max_currents()`.
+
 ## Public API
 
 The public API is every name `alfen_modbus` exports in its `__all__`. Import
