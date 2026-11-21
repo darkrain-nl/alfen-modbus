@@ -112,15 +112,15 @@ class SocketStatus(Component):
     @property
     def held_max_current(self) -> float | None:
         """The max current kept in force; ``None`` when none is held."""
-        return None if self._hold is None else self._hold.amps[0]
+        return None if self._hold is None else self._hold.amps
 
     async def async_hold_max_current(self, amps: float) -> None:
         """Set the max current and keep it in force across polls."""
         # The same value again writes nothing, unless it never got through.
-        if self._hold is not None and self._hold.sent and self._hold.amps == (amps,):
+        if self._hold is not None and self._hold.sent and self._hold.amps == amps:
             return
         # Held before the write, so a failed write is retried next poll.
-        hold = SetpointHold((amps,))
+        hold = SetpointHold(amps)
         self._hold = hold
         await self.async_write_max_current(amps)
         hold.sent = True
@@ -134,11 +134,11 @@ class SocketStatus(Component):
         if self._hold is None:
             return HoldCheck.KEEP
         hold = self._hold
-        check = hold.check((self.max_current,), (self.max_current_valid_time,))
+        check = hold.check(self.max_current, self.max_current_valid_time)
         if check is HoldCheck.TAKEN_OVER:
             self._hold = None
         elif check is HoldCheck.RESEND:
-            await self.async_write_max_current(hold.amps[0])
+            await self.async_write_max_current(hold.amps)
             hold.sent = True
         return check
 

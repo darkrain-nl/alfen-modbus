@@ -117,7 +117,7 @@ Older ABB meters fill them all.
 | :--- | :--- |
 | `SocketStatus.async_write_max_current(amps)` | The socket's max current |
 | `SocketStatus.async_write_charging_phases(phases)` | Switch between 1 and 3 phases |
-| `SmartChargingNetwork.async_write_max_currents(l1, l2, l3)` | The SCN's per-phase max currents |
+| `SmartChargingNetwork.async_write_max_current(phase, amps)` | One SCN phase's max current (`Phase.L1` to `Phase.L3`) |
 
 Each max current must be 0 (pause) or at least `MIN_CHARGING_CURRENT` (6 A, the
 IEC 61851 floor); anything in between raises `ValueError` before writing. The
@@ -162,11 +162,12 @@ report's `rewrite_failed`, apart from the reads in `failed`.
 A hold lives in memory. After a restart nothing is resent, and the station
 falls back to its safe current once the validity time runs out.
 
-Only polled components are resent, so poll `charger.held_components` (or all
-of `charger.components`) as well as whatever else you read.
-`held_max_current` is the value held, or `None`. The SCN has the same for its
-three phases: `async_hold_max_currents(l1, l2, l3)`, `held_max_currents` and
-`release_max_currents()`.
+Only polled components are resent, so a caller holding an SCN phase must poll
+`charger.scn` as well as the sockets. `held_max_current` is the value held, or
+`None`. The SCN holds each phase on its own, with the same methods taking a
+`Phase`: `async_hold_max_current(phase, amps)`, `held_max_current(phase)` and
+`release_max_current(phase)`. Each phase has its own remaining time and is
+written in its own request, so one phase taken over leaves the others held.
 
 ## Public API
 

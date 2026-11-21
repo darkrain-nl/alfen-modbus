@@ -116,18 +116,6 @@ class AlfenCharger:
             if component is not None
         )
 
-    @property
-    def held_components(self) -> tuple[Pollable, ...]:
-        """The sub-systems holding a setpoint, which each poll must read."""
-        held: list[Pollable] = [
-            socket
-            for socket in self.sockets
-            if socket.status.held_max_current is not None
-        ]
-        if self.scn is not None and self.scn.held_max_currents is not None:
-            held.append(self.scn)
-        return tuple(held)
-
     async def async_update(self, components: Iterable[Pollable]) -> PollReport:
         """Poll each sub-system, resend due setpoints, report the outcome."""
         await self.async_setup()

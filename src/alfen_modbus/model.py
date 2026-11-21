@@ -44,18 +44,15 @@ class HoldCheck(Enum):
 
 
 class SetpointHold:
-    """Max currents to send again before the station lets them lapse."""
+    """A max current to send again before the station lets it lapse."""
 
-    def __init__(self, amps: tuple[float, ...]) -> None:
-        for value in amps:
-            validate_max_current(value)
+    def __init__(self, amps: float) -> None:
+        validate_max_current(amps)
         self.amps = amps
         self.sent = False
         self._checked_at = monotonic()
 
-    def check(
-        self, read: tuple[float | None, ...], remaining: tuple[int | None, ...]
-    ) -> HoldCheck:
+    def check(self, read: float | None, remaining: int | None) -> HoldCheck:
         """Decide whether the setpoint needs sending to stay in force."""
         now = monotonic()
         try:
@@ -63,19 +60,12 @@ class SetpointHold:
             if not self.sent:
                 return HoldCheck.RESEND
             # Time left on a value we did not send: another client wrote it.
-            if any(
-                seconds
-                for value, wanted, seconds in zip(
-                    read, self.amps, remaining, strict=True
-                )
-                if value is None or abs(value - wanted) > READBACK_TOLERANCE
+            if remaining and (
+                read is None or abs(read - self.amps) > READBACK_TOLERANCE
             ):
                 return HoldCheck.TAKEN_OVER
             # A lapse or reboot leaves 0 s; the next poll is a gap away.
-            if any(
-                seconds is None or seconds <= 2 * (now - self._checked_at)
-                for seconds in remaining
-            ):
+            if remaining is None or remaining <= 2 * (now - self._checked_at):
                 return HoldCheck.RESEND
             return HoldCheck.KEEP
         finally:

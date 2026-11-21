@@ -24,6 +24,14 @@ class MeterType(IntEnum):
     OTHER = 4
 
 
+class Phase(IntEnum):
+    """One phase of the Smart Charging Network's supply."""
+
+    L1 = 1
+    L2 = 2
+    L3 = 3
+
+
 class ChargingPhases(IntEnum):
     """How many phases a socket charges on."""
 
