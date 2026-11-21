@@ -33,11 +33,12 @@ class PollReport:
 
     updated: set[Pollable] = field(default_factory=set)
     failed: dict[Pollable, ModbusError] = field(default_factory=dict)
+    rewrite_failed: dict[Pollable, ModbusError] = field(default_factory=dict)
 
     @property
     def complete(self) -> bool:
-        """Whether every polled sub-system refreshed."""
-        return not self.failed
+        """Whether every polled sub-system refreshed and kept its hold."""
+        return not self.failed and not self.rewrite_failed
 
 
 class AlfenCharger:
@@ -95,7 +96,7 @@ class AlfenCharger:
         )
 
     async def async_update(self, components: Iterable[Pollable]) -> PollReport:
-        """Poll each sub-system on its own and record what happened."""
+        """Poll each sub-system, resend due setpoints, report the outcome."""
         await self.async_setup()
         report = PollReport()
         for component in components:
@@ -113,6 +114,16 @@ class AlfenCharger:
                 report.failed[component] = err
             else:
                 report.updated.add(component)
+        # A held setpoint lapses to the safe current unless resent in time.
+        for component in report.updated:
+            if not isinstance(component, Socket | SmartChargingNetwork):
+                continue
+            try:
+                await component.async_keep_hold()
+            except ModbusConnectionError:
+                raise
+            except ModbusError as err:
+                report.rewrite_failed[component] = err
         # Listeners fire once every read is in, so they see one poll.
         for component in report.updated:
             component.notify()

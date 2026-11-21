@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from modbus_connection import ModbusUnit
 from modbus_connection.encode import encode_float32
 from modbus_connection.model import Component, boolean, float32, integer, string, uint32
 
-from .model import NAN, validate_max_current
+from .model import NAN, SetpointHold, validate_max_current
 
 
 class SmartChargingNetwork(Component):
@@ -28,6 +29,15 @@ class SmartChargingNetwork(Component):
     safe_current = float32(1429, unit="A")
     max_current_enabled = boolean(1431, nan=NAN)
 
+    def __init__(self, unit: ModbusUnit) -> None:
+        super().__init__(unit)
+        self._hold: SetpointHold | None = None
+
+    @property
+    def held_max_currents(self) -> tuple[float, ...] | None:
+        """The per-phase max currents kept in force, or ``None``."""
+        return None if self._hold is None else self._hold.amps
+
     async def async_write_max_currents(self, l1: float, l2: float, l3: float) -> None:
         """Set each phase's max current, restarting its validity timer.
 
@@ -39,3 +49,24 @@ class SmartChargingNetwork(Component):
             SmartChargingNetwork.max_current_l1.address,
             [*encode_float32(l1), *encode_float32(l2), *encode_float32(l3)],
         )
+
+    async def async_hold_max_currents(self, l1: float, l2: float, l3: float) -> None:
+        """Set each phase's max current and keep them in force.
+
+        The hold stays when this write fails, so the next poll retries.
+        """
+        self._hold = SetpointHold((l1, l2, l3))
+        await self.async_write_max_currents(l1, l2, l3)
+
+    def release_max_currents(self) -> None:
+        """Stop resending, so each phase lapses to the safe current."""
+        self._hold = None
+
+    async def async_keep_hold(self) -> None:
+        """Send the held max currents again if one is about to lapse."""
+        if self._hold is None or not self._hold.due(
+            (self.max_current_l1, self.max_current_l2, self.max_current_l3),
+            (self.valid_time_l1, self.valid_time_l2, self.valid_time_l3),
+        ):
+            return
+        await self.async_write_max_currents(*self._hold.amps)

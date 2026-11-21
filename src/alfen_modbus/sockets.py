@@ -18,7 +18,7 @@ from modbus_connection.model import (
 )
 
 from .enums import ChargingPhases, MeterState, MeterType, Mode3State
-from .model import NAN, validate_max_current
+from .model import NAN, SetpointHold, validate_max_current
 
 
 class SocketMeter(Component):
@@ -85,6 +85,10 @@ class SocketStatus(Component):
     setpoint_accounted_for = boolean(1214, nan=NAN)
     charging_phases = enum(1215, ChargingPhases, nan=NAN)
 
+    def __init__(self, unit: ModbusUnit) -> None:
+        super().__init__(unit)
+        self._hold: SetpointHold | None = None
+
     @property
     def mode_3_state(self) -> Mode3State | None:
         """The Mode 3 state; ``None`` for a code this map lacks."""
@@ -103,6 +107,31 @@ class SocketStatus(Component):
             SocketStatus.max_current.address, encode_float32(amps)
         )
 
+    @property
+    def held_max_current(self) -> float | None:
+        """The max current kept in force; ``None`` when none is held."""
+        return None if self._hold is None else self._hold.amps[0]
+
+    async def async_hold_max_current(self, amps: float) -> None:
+        """Set the max current and keep it in force across polls.
+
+        The hold stays when this write fails, so the next poll retries.
+        """
+        self._hold = SetpointHold((amps,))
+        await self.async_write_max_current(amps)
+
+    def release_max_current(self) -> None:
+        """Stop resending the max current, so it lapses to safe current."""
+        self._hold = None
+
+    async def async_keep_hold(self) -> None:
+        """Send the held max current again if it is about to lapse."""
+        if self._hold is None or not self._hold.due(
+            (self.max_current,), (self.max_current_valid_time,)
+        ):
+            return
+        await self.async_write_max_current(self._hold.amps[0])
+
     async def async_write_charging_phases(self, phases: ChargingPhases) -> None:
         """Switch the socket between one- and three-phase charging."""
         await self._unit.write_register(
@@ -118,3 +147,7 @@ class Socket(ComponentGroup):
         self.meter = SocketMeter(unit)
         self.status = SocketStatus(unit)
         super().__init__(unit, (self.meter, self.status))
+
+    async def async_keep_hold(self) -> None:
+        """Send the socket's held max current again if about to lapse."""
+        await self.status.async_keep_hold()
