@@ -207,6 +207,19 @@ on `--socket` (1 by default) for `--seconds`, polling every `--interval`
 safe current. Each line shows the setpoint, the time it has left, the applied
 current and whether the station accounted for it; `renewed` marks a resend.
 
+## Debug logging
+
+The `alfen_modbus` logger says, at `DEBUG`, why a station is polled the way it
+is and what happened to a held setpoint:
+
+- what setup found: the platform, firmware, socket count, and whether the
+  station serves the Smart Charging Network block
+- every resend of a held setpoint, and a resend that failed
+- a hold dropped because another client wrote a different max current
+
+Each line names the station by serial number. A hold left in force logs
+nothing, so a quiet log at 10 s polls is normal.
+
 ## Open questions
 
 The guide and a working third-party integration disagree on two points, and the

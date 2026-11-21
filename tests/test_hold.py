@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 from modbus_connection import (
     IllegalDataAddressError,
@@ -96,8 +98,13 @@ async def test_hold_not_resent_with_time_to_spare(
 
 @pytest.mark.parametrize("gap", [21.0, 30.0, 60.0])
 async def test_hold_resent_before_lapse(
-    charger: AlfenCharger, socket_1: MockModbusUnit, clock: Clock, gap: float
+    charger: AlfenCharger,
+    socket_1: MockModbusUnit,
+    clock: Clock,
+    caplog: pytest.LogCaptureFixture,
+    gap: float,
 ) -> None:
+    caplog.set_level(logging.DEBUG, "alfen_modbus")
     await charger.socket_1.status.async_hold_max_current(16.0)
     writes = recorder(socket_1)
     clock.now += gap
@@ -106,6 +113,7 @@ async def test_hold_resent_before_lapse(
     assert [(write.address, write.values) for write in writes] == [
         (1210, encode_float32(16.0))
     ]
+    assert "ACE0012345: resent socket 1's held max current" in caplog.text
 
 
 @pytest.mark.parametrize("value", [encode_float32(6.0), [0x7FC0, 0x0000]])
@@ -124,8 +132,12 @@ async def test_hold_resent_after_reboot(
 
 
 async def test_hold_dropped_when_taken_over(
-    charger: AlfenCharger, socket_1: MockModbusUnit, clock: Clock
+    charger: AlfenCharger,
+    socket_1: MockModbusUnit,
+    clock: Clock,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.DEBUG, "alfen_modbus")
     await charger.socket_1.status.async_hold_max_current(16.0)
     # Another client wrote 6 A, and its time is still running.
     socket_1.holding[1210], socket_1.holding[1211] = encode_float32(6.0)
@@ -136,6 +148,7 @@ async def test_hold_dropped_when_taken_over(
     assert report.setpoint_taken_over == {charger.socket_1}
     assert charger.socket_1.status.held_max_current is None
     assert charger.socket_1.status.max_current == 6.0
+    assert "ACE0012345: socket 1 reads a max current we did not" in caplog.text
     clock.now += 60
     assert (await poll_all(charger)).setpoint_taken_over == set()
     assert writes == []
@@ -231,8 +244,12 @@ async def test_hold_only_for_polled(
 
 
 async def test_resend_failure_reported(
-    charger: AlfenCharger, socket_1: MockModbusUnit, clock: Clock
+    charger: AlfenCharger,
+    socket_1: MockModbusUnit,
+    clock: Clock,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.DEBUG, "alfen_modbus")
     await charger.socket_1.status.async_hold_max_current(16.0)
     socket_1.fail_write(1210, ServerDeviceFailureError())
     calls: list[None] = []
@@ -243,6 +260,7 @@ async def test_resend_failure_reported(
     assert isinstance(report.rewrite_failed[charger.socket_1], ServerDeviceFailureError)
     assert not report.complete
     assert calls == [None]
+    assert "resending socket 1's held max current failed" in caplog.text
 
 
 async def test_resend_connection_lost_raises(
@@ -313,8 +331,12 @@ async def test_scn_hold_same_values_writes_nothing(
 
 
 async def test_scn_hold_dropped_when_one_phase_taken_over(
-    charger: AlfenCharger, station: MockModbusUnit, clock: Clock
+    charger: AlfenCharger,
+    station: MockModbusUnit,
+    clock: Clock,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.DEBUG, "alfen_modbus")
     assert charger.scn is not None
     await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
     station.holding[1421], station.holding[1422] = encode_float32(10.0)
@@ -324,3 +346,4 @@ async def test_scn_hold_dropped_when_one_phase_taken_over(
     assert writes == []
     assert report.setpoint_taken_over == {charger.scn}
     assert charger.scn.held_max_currents is None
+    assert "the SCN reads a max current we did not write" in caplog.text
