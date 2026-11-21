@@ -135,12 +135,32 @@ await charger.socket_1.status.async_hold_max_current(16.0)
 charger.socket_1.status.release_max_current()  # lapses to the safe current
 ```
 
-Each `async_update()` that polls a socket with a held setpoint compares the time
-left against the gap since the previous poll, and resends while one more poll
-would still arrive before the setpoint lapses. It also resends when the station
-no longer reports the held value, as after a reboot. Any poll interval works,
-provided it is shorter than the validity time. A failed resend is listed in the
+Each `async_update()` that polls a socket with a held setpoint decides from
+what it just read:
+
+- **Resend** when the time left is at most twice the gap since the previous
+  poll, so one more poll would still arrive before the setpoint lapses. A
+  reboot or lapse leaves 0 s, so it resends then too. Any poll interval works,
+  provided it is shorter than the validity time; with 10 s polls and the
+  default 60 s, that is one write about every 40 s.
+- **Step back** when the station reports a different max current with time
+  still left: another Modbus client wrote it. The hold is dropped and the
+  socket listed in the report's `setpoint_taken_over`. A second client
+  writing the same value cannot be told apart, and does no harm.
+- **Do nothing** otherwise.
+
+Holding the value already held writes nothing, so an automation can set it as
+often as it likes. A new value is written at once, with no rate limit: smooth
+fast changes in the caller. A write updates the cached `max_current` straight
+away, so a UI can show it without another poll. If a hold's write fails, the
+hold stays and the next poll retries it. A failed resend is listed in the
 report's `rewrite_failed`, apart from the reads in `failed`.
+
+A hold lives in memory. After a restart nothing is resent, and the station
+falls back to its safe current once the validity time runs out.
+
+Only polled components are resent, so poll `charger.held_components` (or all
+of `charger.components`) as well as whatever else you read.
 `held_max_current` is the value held, or `None`. The SCN has the same for its
 three phases: `async_hold_max_currents(l1, l2, l3)`, `held_max_currents` and
 `release_max_currents()`.

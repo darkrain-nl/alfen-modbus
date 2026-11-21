@@ -14,6 +14,7 @@ from modbus_connection import (
 )
 from modbus_connection.model import Component, ComponentGroup, read_optional
 
+from .model import HoldCheck
 from .scn import SmartChargingNetwork
 from .sockets import Socket
 from .station import StationClock, StationIdentity, StationStatus
@@ -34,6 +35,7 @@ class PollReport:
     updated: set[Pollable] = field(default_factory=set)
     failed: dict[Pollable, ModbusError] = field(default_factory=dict)
     rewrite_failed: dict[Pollable, ModbusError] = field(default_factory=dict)
+    setpoint_taken_over: set[Pollable] = field(default_factory=set)
 
     @property
     def complete(self) -> bool:
@@ -95,6 +97,18 @@ class AlfenCharger:
             if component is not None
         )
 
+    @property
+    def held_components(self) -> tuple[Pollable, ...]:
+        """The sub-systems holding a setpoint, which each poll must read."""
+        held: list[Pollable] = [
+            socket
+            for socket in self.sockets
+            if socket.status.held_max_current is not None
+        ]
+        if self.scn is not None and self.scn.held_max_currents is not None:
+            held.append(self.scn)
+        return tuple(held)
+
     async def async_update(self, components: Iterable[Pollable]) -> PollReport:
         """Poll each sub-system, resend due setpoints, report the outcome."""
         await self.async_setup()
@@ -119,7 +133,8 @@ class AlfenCharger:
             if not isinstance(component, Socket | SmartChargingNetwork):
                 continue
             try:
-                await component.async_keep_hold()
+                if await component.async_keep_hold() is HoldCheck.TAKEN_OVER:
+                    report.setpoint_taken_over.add(component)
             except ModbusConnectionError:
                 raise
             except ModbusError as err:
