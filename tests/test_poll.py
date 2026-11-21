@@ -4,12 +4,14 @@ import pytest
 from modbus_connection import (
     IllegalDataAddressError,
     ModbusConnectionError,
+    ModbusError,
     ModbusTimeoutError,
+    ServerDeviceFailureError,
 )
 from modbus_connection.encode import encode_float32
 from modbus_connection.mock import MockModbusConnection, MockModbusUnit
 
-from alfen_modbus import AlfenCharger
+from alfen_modbus import AlfenCharger, NothingAnsweredError
 
 
 async def test_components_before_setup(connection: MockModbusConnection) -> None:
@@ -72,6 +74,33 @@ async def test_refusal_lands_in_failed(
     assert report.failed.keys() == {charger.socket_1}
     assert isinstance(report.failed[charger.socket_1], IllegalDataAddressError)
     assert not report.complete
+
+
+async def test_nothing_answered_raises(
+    connection: MockModbusConnection,
+    station: MockModbusUnit,
+    socket_1: MockModbusUnit,
+) -> None:
+    charger = AlfenCharger(connection.for_unit)
+    await charger.async_setup()
+    station.fail_read(1100, ServerDeviceFailureError())
+    socket_1.fail_read(300, ModbusTimeoutError())
+    calls: list[None] = []
+    charger.status.add_update_listener(lambda: calls.append(None))
+    with pytest.raises(NothingAnsweredError, match="all 2 polled") as err:
+        await charger.async_update((charger.status, charger.socket_1))
+    assert err.value.failed.keys() == {charger.status, charger.socket_1}
+    assert isinstance(err.value, ModbusError)
+    assert calls == []
+
+
+async def test_nothing_polled_returns_empty(
+    connection: MockModbusConnection,
+) -> None:
+    charger = AlfenCharger(connection.for_unit)
+    report = await charger.async_update(())
+    assert report.complete
+    assert not report.updated
 
 
 async def test_first_timeout_raises(

@@ -79,7 +79,10 @@ the sockets passes `charger.sockets` and skips the rest.
 
 The returned `PollReport` is keyed by those same objects: `updated` holds the
 ones that refreshed and `failed` maps the rest to their error. A lost connection
-raises, and so does a timeout before anything has answered.
+raises, and so does a timeout before anything has answered. When every polled
+sub-system fails, `async_update()` raises `NothingAnsweredError`, a
+`ModbusError` whose `failed` maps each one to its error, instead of returning a
+report with nothing in `updated`.
 
 ```python
 report = await charger.async_update(charger.components)
