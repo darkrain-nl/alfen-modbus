@@ -122,6 +122,49 @@ library sets no upper bound: the station caps a setpoint at its installation
 limit. Don't use `status.active_max_current` or `SocketStatus.actual_max_current`
 as a UI ceiling either. Both follow the setpoint, so the slider would ratchet down.
 
+### Holding a setpoint
+
+A written max current only lasts the validity time set in ACE Service
+Installer (60 s by default); then the station falls back to its safe current.
+No register reports the validity time itself, only how much of it is left. To
+keep a setpoint in force, hold it instead of writing it:
+
+```python
+await charger.socket_1.status.async_hold_max_current(16.0)
+# ... every poll now resends it in time
+charger.socket_1.status.release_max_current()  # lapses to the safe current
+```
+
+Each `async_update()` that polls a socket with a held setpoint decides from
+what it just read:
+
+- **Resend** when the time left is at most twice the gap since the previous
+  poll, so one more poll would still arrive before the setpoint lapses. A
+  reboot or lapse leaves 0 s, so it resends then too. Any poll interval works,
+  provided it is shorter than the validity time; with 10 s polls and the
+  default 60 s, that is one write about every 40 s.
+- **Step back** when the station reports a different max current with time
+  still left: another Modbus client wrote it. The hold is dropped and the
+  socket listed in the report's `setpoint_taken_over`. A second client
+  writing the same value cannot be told apart, and does no harm.
+- **Do nothing** otherwise.
+
+Holding the value already held writes nothing, so an automation can set it as
+often as it likes. A new value is written at once, with no rate limit: smooth
+fast changes in the caller. A write updates the cached `max_current` straight
+away, so a UI can show it without another poll. If a hold's write fails, the
+hold stays and the next poll retries it. A failed resend is listed in the
+report's `rewrite_failed`, apart from the reads in `failed`.
+
+A hold lives in memory. After a restart nothing is resent, and the station
+falls back to its safe current once the validity time runs out.
+
+Only polled components are resent, so poll `charger.held_components` (or all
+of `charger.components`) as well as whatever else you read.
+`held_max_current` is the value held, or `None`. The SCN has the same for its
+three phases: `async_hold_max_currents(l1, l2, l3)`, `held_max_currents` and
+`release_max_currents()`.
+
 ## Public API
 
 The public API is every name `alfen_modbus` exports in its `__all__`. Import

@@ -18,7 +18,7 @@ from modbus_connection.model import (
 )
 
 from .enums import ChargingPhases, MeterState, MeterType, Mode3State
-from .model import NAN, validate_max_current
+from .model import NAN, HoldCheck, SetpointHold, validate_max_current
 
 
 class SocketMeter(Component):
@@ -85,6 +85,10 @@ class SocketStatus(Component):
     setpoint_accounted_for = boolean(1214, nan=NAN)
     charging_phases = enum(1215, ChargingPhases, nan=NAN)
 
+    def __init__(self, unit: ModbusUnit) -> None:
+        super().__init__(unit)
+        self._hold: SetpointHold | None = None
+
     @property
     def mode_3_state(self) -> Mode3State | None:
         """The Mode 3 state; ``None`` for a code this map lacks."""
@@ -102,6 +106,41 @@ class SocketStatus(Component):
         await self._unit.write_registers(
             SocketStatus.max_current.address, encode_float32(amps)
         )
+        # The station reads a write back as is, so show it before a poll.
+        self._values[SocketStatus.max_current.name] = amps
+
+    @property
+    def held_max_current(self) -> float | None:
+        """The max current kept in force; ``None`` when none is held."""
+        return None if self._hold is None else self._hold.amps[0]
+
+    async def async_hold_max_current(self, amps: float) -> None:
+        """Set the max current and keep it in force across polls."""
+        # The same value again writes nothing, unless it never got through.
+        if self._hold is not None and self._hold.sent and self._hold.amps == (amps,):
+            return
+        # Held before the write, so a failed write is retried next poll.
+        hold = SetpointHold((amps,))
+        self._hold = hold
+        await self.async_write_max_current(amps)
+        hold.sent = True
+
+    def release_max_current(self) -> None:
+        """Stop resending the max current, so it lapses to safe current."""
+        self._hold = None
+
+    async def async_keep_hold(self) -> HoldCheck:
+        """Resend the held max current if due; drop it if taken over."""
+        if self._hold is None:
+            return HoldCheck.KEEP
+        hold = self._hold
+        check = hold.check((self.max_current,), (self.max_current_valid_time,))
+        if check is HoldCheck.TAKEN_OVER:
+            self._hold = None
+        elif check is HoldCheck.RESEND:
+            await self.async_write_max_current(hold.amps[0])
+            hold.sent = True
+        return check
 
     async def async_write_charging_phases(self, phases: ChargingPhases) -> None:
         """Switch the socket between one- and three-phase charging."""
@@ -118,3 +157,7 @@ class Socket(ComponentGroup):
         self.meter = SocketMeter(unit)
         self.status = SocketStatus(unit)
         super().__init__(unit, (self.meter, self.status))
+
+    async def async_keep_hold(self) -> HoldCheck:
+        """Resend the socket's held max current if due."""
+        return await self.status.async_keep_hold()
