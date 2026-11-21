@@ -124,6 +124,8 @@ def _print_failures(report: PollReport) -> None:
         print(f"  read {_title(failed)}: {_error(error)}")
     for failed, error in report.rewrite_failed.items():
         print(f"  resend {_title(failed)}: {_error(error)}")
+    for taken in report.setpoint_taken_over:
+        print(f"  another client took over {_title(taken)}; hold dropped")
 
 
 async def _print_registers(
