@@ -31,6 +31,14 @@ type Pollable = Component | ComponentGroup
 _LOGGER = logging.getLogger(__name__)
 
 
+class NothingAnsweredError(ModbusError):
+    """Every sub-system a poll asked for failed."""
+
+    def __init__(self, failed: dict[Pollable, ModbusError]) -> None:
+        super().__init__(f"all {len(failed)} polled sub-systems failed")
+        self.failed = failed
+
+
 @dataclass
 class PollReport:
     """What one poll managed to refresh."""
@@ -123,6 +131,25 @@ class AlfenCharger:
     async def async_update(self, components: Iterable[Pollable]) -> PollReport:
         """Poll each sub-system, resend due setpoints, report the outcome."""
         await self.async_setup()
+        report = await self._async_read(components)
+        # With no answer at all the station failed, not one sub-system.
+        if report.failed and not report.updated:
+            raise NothingAnsweredError(report.failed)
+        # A held setpoint lapses to the safe current unless resent in time.
+        for socket in self.sockets:
+            if socket in report.updated:
+                await self._async_keep_hold(
+                    report, socket, socket.status, f"socket {socket.number}"
+                )
+        if self.scn is not None and self.scn in report.updated:
+            await self._async_keep_hold(report, self.scn, self.scn, "the SCN")
+        # Listeners fire once every read is in, so they see one poll.
+        for component in report.updated:
+            component.notify()
+        return report
+
+    async def _async_read(self, components: Iterable[Pollable]) -> PollReport:
+        """Read each sub-system on its own, without notifying."""
         report = PollReport()
         for component in components:
             try:
@@ -139,17 +166,6 @@ class AlfenCharger:
                 report.failed[component] = err
             else:
                 report.updated.add(component)
-        # A held setpoint lapses to the safe current unless resent in time.
-        for socket in self.sockets:
-            if socket in report.updated:
-                await self._async_keep_hold(
-                    report, socket, socket.status, f"socket {socket.number}"
-                )
-        if self.scn is not None and self.scn in report.updated:
-            await self._async_keep_hold(report, self.scn, self.scn, "the SCN")
-        # Listeners fire once every read is in, so they see one poll.
-        for component in report.updated:
-            component.notify()
         return report
 
     async def _async_keep_hold(

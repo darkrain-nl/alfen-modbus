@@ -1,6 +1,13 @@
 """Read and control Alfen charging stations over Modbus TCP."""
 
-from .charger import MODBUS_PORT, STATION_UNIT, AlfenCharger, Pollable, PollReport
+from .charger import (
+    MODBUS_PORT,
+    STATION_UNIT,
+    AlfenCharger,
+    NothingAnsweredError,
+    Pollable,
+    PollReport,
+)
 from .enums import ChargingPhases, MeterState, MeterType, Mode3State
 from .model import MIN_CHARGING_CURRENT
 from .scn import SmartChargingNetwork
@@ -16,6 +23,7 @@ __all__ = [
     "MeterState",
     "MeterType",
     "Mode3State",
+    "NothingAnsweredError",
     "PollReport",
     "Pollable",
     "SmartChargingNetwork",

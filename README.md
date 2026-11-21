@@ -79,7 +79,10 @@ the sockets passes `charger.sockets` and skips the rest.
 
 The returned `PollReport` is keyed by those same objects: `updated` holds the
 ones that refreshed and `failed` maps the rest to their error. A lost connection
-raises, and so does a timeout before anything has answered.
+raises, and so does a timeout before anything has answered. When every polled
+sub-system fails, `async_update()` raises `NothingAnsweredError`, a
+`ModbusError` whose `failed` maps each one to its error, instead of returning a
+report with nothing in `updated`.
 
 ```python
 report = await charger.async_update(charger.components)
@@ -219,6 +222,9 @@ is and what happened to a held setpoint:
 
 Each line names the station by serial number. A hold left in force logs
 nothing, so a quiet log at 10 s polls is normal.
+
+`query.py --debug` prints this log along with tmodbus's, which shows every raw
+Modbus frame sent and received.
 
 ## Open questions
 
