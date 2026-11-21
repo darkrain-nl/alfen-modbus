@@ -67,6 +67,8 @@ EXAMPLES = """examples:
   uv run script/query.py 192.168.1.60 --registers 200:1100:6
   # WRITES: hold 10 A on socket 1 for 3 minutes, then let it lapse
   uv run script/query.py 192.168.1.60 --hold 10 --seconds 180
+  # the library's log and every raw Modbus frame
+  uv run script/query.py 192.168.1.60 --probe --debug
 """
 
 
@@ -290,7 +292,18 @@ async def main() -> int:
     parser.add_argument(
         "--interval", type=int, default=10, help="seconds between --hold polls"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="print the library's log and every raw Modbus frame",
+    )
     args = parser.parse_args()
+    if args.debug:
+        # tmodbus logs each frame it sends and receives at DEBUG.
+        for name in ("alfen_modbus", "tmodbus"):
+            logger = logging.getLogger(name)
+            logger.setLevel(logging.DEBUG)
+            logger.addHandler(logging.StreamHandler())
     if args.probe and (args.raw or args.hold is not None):
         parser.error("--probe needs no setup; drop --raw and --hold")
 

@@ -223,6 +223,9 @@ is and what happened to a held setpoint:
 Each line names the station by serial number. A hold left in force logs
 nothing, so a quiet log at 10 s polls is normal.
 
+`query.py --debug` prints this log along with tmodbus's, which shows every raw
+Modbus frame sent and received.
+
 ## Open questions
 
 The guide and a working third-party integration disagree on two points, and the
