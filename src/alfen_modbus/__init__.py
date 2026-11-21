@@ -8,7 +8,7 @@ from .charger import (
     Pollable,
     PollReport,
 )
-from .enums import ChargingPhases, MeterState, MeterType, Mode3State
+from .enums import ChargingPhases, MeterState, MeterType, Mode3State, Phase
 from .model import MIN_CHARGING_CURRENT
 from .scn import SmartChargingNetwork
 from .sockets import Socket, SocketMeter, SocketStatus
@@ -24,6 +24,7 @@ __all__ = [
     "MeterType",
     "Mode3State",
     "NothingAnsweredError",
+    "Phase",
     "PollReport",
     "Pollable",
     "SmartChargingNetwork",

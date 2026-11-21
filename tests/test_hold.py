@@ -11,7 +11,7 @@ from modbus_connection import (
 from modbus_connection.encode import encode_float32
 from modbus_connection.mock import MockModbusConnection, MockModbusUnit, WriteEvent
 
-from alfen_modbus import AlfenCharger
+from alfen_modbus import AlfenCharger, Phase
 
 from .conftest import poll_all
 
@@ -201,23 +201,9 @@ async def test_write_shows_before_poll(charger: AlfenCharger, clock: Clock) -> N
     await charger.socket_1.status.async_hold_max_current(13.5)
     assert charger.socket_1.status.max_current == 13.5
     assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
-    assert (
-        charger.scn.max_current_l1,
-        charger.scn.max_current_l2,
-        charger.scn.max_current_l3,
-    ) == (20.0, 16.0, 0.0)
-
-
-async def test_held_components(charger: AlfenCharger, clock: Clock) -> None:
-    assert not charger.held_components
-    assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
-    await charger.socket_1.status.async_hold_max_current(16.0)
-    assert charger.held_components == (charger.socket_1, charger.scn)
-    charger.socket_1.status.release_max_current()
-    charger.scn.release_max_currents()
-    assert not charger.held_components
+    await charger.scn.async_hold_max_current(Phase.L2, 20.0)
+    assert charger.scn.max_current_l2 == 20.0
+    assert charger.scn.max_current_l1 == 20.0  # as polled
 
 
 async def test_released_hold_not_resent(
@@ -273,26 +259,21 @@ async def test_resend_connection_lost_raises(
         await poll_all(charger)
 
 
-async def test_scn_hold_resent_in_one_request(
+async def test_scn_resends_only_the_short_phase(
     charger: AlfenCharger, station: MockModbusUnit, clock: Clock
 ) -> None:
     assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
-    assert charger.scn.held_max_currents == (20.0, 16.0, 0.0)
+    await charger.scn.async_hold_max_current(Phase.L1, 20.0)
+    await charger.scn.async_hold_max_current(Phase.L3, 0.0)
+    assert charger.scn.held_max_current(Phase.L3) == 0.0
+    assert charger.scn.held_max_current(Phase.L2) is None
     writes = recorder(station)
     # Only phase 3 runs short: 10 s left after a 10 s gap.
     station.holding[1427], station.holding[1428] = 0, 10
     clock.now += 10
     await poll_all(charger)
     assert [(write.address, write.values) for write in writes] == [
-        (
-            1417,
-            [
-                *encode_float32(20.0),
-                *encode_float32(16.0),
-                *encode_float32(0.0),
-            ],
-        )
+        (1421, encode_float32(0.0))
     ]
 
 
@@ -300,37 +281,43 @@ async def test_scn_hold_not_resent_with_time_to_spare(
     charger: AlfenCharger, station: MockModbusUnit, clock: Clock
 ) -> None:
     assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
+    for phase in Phase:
+        await charger.scn.async_hold_max_current(phase, 16.0)
     writes = recorder(station)
     clock.now += 10
     await poll_all(charger)
     assert writes == []
 
 
-async def test_scn_released_hold_not_resent(
+async def test_scn_released_phase_not_resent(
     charger: AlfenCharger, station: MockModbusUnit, clock: Clock
 ) -> None:
     assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
-    charger.scn.release_max_currents()
+    await charger.scn.async_hold_max_current(Phase.L1, 20.0)
+    await charger.scn.async_hold_max_current(Phase.L2, 16.0)
+    charger.scn.release_max_current(Phase.L1)
+    charger.scn.release_max_current(Phase.L3)
     writes = recorder(station)
     clock.now += 60
     await poll_all(charger)
-    assert writes == []
-    assert charger.scn.held_max_currents is None
+    assert [write.address for write in writes] == [1419]
+    assert charger.scn.held_max_current(Phase.L1) is None
+    assert charger.scn.held_max_current(Phase.L2) == 16.0
 
 
-async def test_scn_hold_same_values_writes_nothing(
+async def test_scn_hold_same_value_writes_nothing(
     charger: AlfenCharger, station: MockModbusUnit, clock: Clock
 ) -> None:
     assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
+    await charger.scn.async_hold_max_current(Phase.L1, 20.0)
     writes = recorder(station)
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
+    await charger.scn.async_hold_max_current(Phase.L1, 20.0)
     assert writes == []
+    await charger.scn.async_hold_max_current(Phase.L2, 20.0)
+    assert len(writes) == 1
 
 
-async def test_scn_hold_dropped_when_one_phase_taken_over(
+async def test_scn_phase_taken_over_outranks_resend(
     charger: AlfenCharger,
     station: MockModbusUnit,
     clock: Clock,
@@ -338,12 +325,15 @@ async def test_scn_hold_dropped_when_one_phase_taken_over(
 ) -> None:
     caplog.set_level(logging.DEBUG, "alfen_modbus")
     assert charger.scn is not None
-    await charger.scn.async_hold_max_currents(20.0, 16.0, 0.0)
+    await charger.scn.async_hold_max_current(Phase.L1, 20.0)
+    await charger.scn.async_hold_max_current(Phase.L3, 16.0)
     station.holding[1421], station.holding[1422] = encode_float32(10.0)
     writes = recorder(station)
     clock.now += 60
     report = await poll_all(charger)
-    assert writes == []
+    # Phase 3 was taken over; phase 1 is still held and was due.
+    assert [write.address for write in writes] == [1417]
     assert report.setpoint_taken_over == {charger.scn}
-    assert charger.scn.held_max_currents is None
+    assert charger.scn.held_max_current(Phase.L3) is None
+    assert charger.scn.held_max_current(Phase.L1) == 20.0
     assert "the SCN reads a max current we did not write" in caplog.text

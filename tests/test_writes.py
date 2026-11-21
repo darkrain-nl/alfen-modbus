@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 
 import pytest
-from modbus_connection.mock import MockModbusConnection, MockModbusUnit
+from modbus_connection.encode import encode_float32
+from modbus_connection.mock import MockModbusConnection, MockModbusUnit, WriteEvent
 
-from alfen_modbus import AlfenCharger, ChargingPhases
+from alfen_modbus import AlfenCharger, ChargingPhases, Phase
 
 from .conftest import poll_all
 
@@ -54,32 +55,38 @@ async def test_charging_phases(
     assert socket_1.holding[1215] == 1
 
 
-async def test_scn_max_currents(
+async def test_scn_max_current(
     connection: MockModbusConnection, station: MockModbusUnit
 ) -> None:
-    writes: list[object] = []
-    station.on_write(writes.append)
     charger = AlfenCharger(connection.for_unit)
     await poll_all(charger)
     assert charger.scn is not None
-    await charger.scn.async_write_max_currents(10.0, 0.0, 32.0)
+    writes = recorder(station)
+    await charger.scn.async_write_max_current(Phase.L2, 16.0)
     await poll_all(charger)
-    assert len(writes) == 1
+    assert [(write.address, write.values) for write in writes] == [
+        (1419, encode_float32(16.0))
+    ]
     assert (
         charger.scn.max_current_l1,
         charger.scn.max_current_l2,
         charger.scn.max_current_l3,
-    ) == (10.0, 0.0, 32.0)
+    ) == (20.0, 16.0, 20.0)
 
 
-async def test_scn_max_currents_rejected(
+async def test_scn_max_current_rejected(
     connection: MockModbusConnection, station: MockModbusUnit
 ) -> None:
     charger = AlfenCharger(connection.for_unit)
     await poll_all(charger)
     assert charger.scn is not None
-    writes: list[object] = []
-    station.on_write(writes.append)
+    writes = recorder(station)
     with pytest.raises(ValueError, match="max current 3.0 A"):
-        await charger.scn.async_write_max_currents(10.0, 10.0, 3.0)
+        await charger.scn.async_write_max_current(Phase.L3, 3.0)
     assert writes == []
+
+
+def recorder(unit: MockModbusUnit) -> list[WriteEvent]:
+    writes: list[WriteEvent] = []
+    unit.on_write(writes.append)
+    return writes
