@@ -1,15 +1,34 @@
 # alfen-modbus
 
-Read and control Alfen EV charging stations (the NG9xx platform: Eve Single,
-Eve Double, Eve Single Pro-line) over Modbus TCP, as typed Python objects.
+Read and control Alfen EV charging stations over Modbus TCP, as typed Python
+objects rather than register numbers.
 
-Built on [modbus-connection](https://github.com/home-assistant-libs/modbus-connection),
-written to back a Home Assistant integration but usable from any asyncio code.
-Fully typed (`mypy --strict`, ships `py.typed`) and tested to 100% branch coverage.
+The library maps Alfen's register set onto
+[modbus-connection](https://github.com/home-assistant-libs/modbus-connection)'s device model:
+you hand it a connection's `for_unit`, call `async_setup()` and `async_update()`,
+and read sub-systems as attributes. It was written to back a Home Assistant
+integration but works from any asyncio code. Fully typed (`mypy --strict`, ships
+`py.typed`) and tested to 100% branch coverage.
 
 > [!WARNING]
 > Alpha. The register map comes from Alfen's documentation and has not yet been
 > checked against a live station. See [Open questions](#open-questions).
+
+## Supported stations
+
+**`AlfenCharger`** reads the NG9xx platform: the Eve Single, Eve Double and Eve
+Single Pro-line. Station-wide registers sit on unit 200 (`STATION_UNIT`), each
+socket's on unit 1 or 2. `async_setup()` reads the identity and settles what the
+station has: the socket count from its status block, and whether it serves the
+Smart Charging Network (SCN) block. A single-socket station never sees a socket 2
+read, and a station refusing the SCN block never sees it polled.
+
+**Own an Alfen station?** The register map has not met real hardware yet, so
+the most useful thing you can do is
+[open an issue](https://github.com/darkrain-nl/alfen-modbus/issues) with the
+output of `uv run script/query.py <address> --raw` (see [Checking a real
+station](#checking-a-real-station)). It only reads, and its raw dump is enough
+to settle the [open questions](#open-questions).
 
 ## Station setup
 
@@ -22,8 +41,7 @@ The station only answers once Modbus is switched on in the ACE Service Installer
 - **Validity time** (default 60 s) is how long a written max current holds before
   the station falls back to its safe current. Rewrite the setpoint more often.
 
-The station accepts two Modbus TCP clients at once, on port 502 (`MODBUS_PORT`). Station-wide
-registers are on unit 200; each socket's are on unit 1 or 2.
+The station accepts two Modbus TCP clients at once, on port 502 (`MODBUS_PORT`).
 
 ## Usage
 
@@ -63,14 +81,15 @@ The returned `PollReport` is keyed by those same objects: `updated` holds the
 ones that refreshed and `failed` maps the rest to their error. A lost connection
 raises, and so does a timeout before anything has answered.
 
+```python
+report = await charger.async_update(charger.components)
+for component, error in report.failed.items():
+    print(f"{component} kept its previous values: {error}")
+```
+
 To check which station answers at an address before setting one up, as a
 config flow does, `await StationIdentity.async_detect(unit)` reads the identity
 over a unit on `STATION_UNIT` alone.
-
-A value the station reports as NaN decodes to `None`.
-Stations with a Reallin meter (built from 2021) leave four sums NaN:
-`current_sum`, `apparent_power_sum`, `reactive_power_sum` and
-`real_energy_consumed_sum`. Older ABB meters fill them all.
 
 ### What it covers
 
@@ -81,6 +100,13 @@ Stations with a Reallin meter (built from 2021) leave four sums NaN:
 | `charger.status` | 200 | Active max current, board temperature, backoffice link, socket count |
 | `charger.scn` | 200 | Smart Charging Network per-phase budget; `None` if refused |
 | `charger.socket_1`, `charger.socket_2` | 1, 2 | Energy meter and charging state; `socket_2` is `None` on a single socket |
+
+### Missing values
+
+A value the station reports as NaN decodes to `None`. Stations with a Reallin
+meter (built from 2021) leave four sums NaN: `current_sum`,
+`apparent_power_sum`, `reactive_power_sum` and `real_energy_consumed_sum`.
+Older ABB meters fill them all.
 
 ### Writes
 
@@ -96,6 +122,34 @@ library sets no upper bound: the station caps a setpoint at its installation
 limit. Don't use `status.active_max_current` or `SocketStatus.actual_max_current`
 as a UI ceiling either. Both follow the setpoint, so the slider would ratchet down.
 
+## Public API
+
+The public API is every name `alfen_modbus` exports in its `__all__`. Import
+from there and nothing else: the submodules, and any name starting with an
+underscore, are internal and can move in any release.
+
+From 1.0 on, releases follow [semantic versioning](https://semver.org): a
+change that breaks the public API needs a major version.
+
+## Checking a real station
+
+`script/query.py` reads one station once and prints every value it serves,
+which is the quickest way to see whether a station is reachable, has Modbus
+switched on, and is detected with the sockets you expect. It writes nothing.
+
+```bash
+# every value, per component
+uv run script/query.py 192.168.1.60
+# every register read as well, undecoded, for an issue report
+uv run script/query.py 192.168.1.60 --raw
+```
+
+A station that answers nothing at all may still have **Allow reading** off
+(see [Station setup](#station-setup)). Components that failed are listed after
+the values, with their error. `--raw` adds every register it read as
+JSON, which is the most helpful thing to include in an issue about a wrong
+value.
+
 ## Open questions
 
 The guide and a working third-party integration disagree on two points, and the
@@ -106,12 +160,8 @@ library follows the integration until a live station settles it:
 - **Word order.** The guide says 32-bit values send the low word first; the
   library reads the high word first.
 
-`script/query.py` reads every register and writes nothing. Run it against a
-station to check:
-
-```bash
-uv run script/query.py 192.168.1.60
-```
+Either one being wrong shows up plainly in `query.py`'s output, as values that
+make no sense for the station.
 
 ## Register map source
 
