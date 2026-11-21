@@ -72,6 +72,7 @@ async def test_poll_reports_every_component(
         charger.socket_2,
     }
     assert report.complete
+    assert charger.sockets == (charger.socket_1, charger.socket_2)
 
 
 async def test_single_socket(
@@ -81,6 +82,7 @@ async def test_single_socket(
     charger = AlfenCharger(connection.for_unit)
     report = await poll_all(charger)
     assert charger.socket_2 is None
+    assert charger.sockets == (charger.socket_1,)
     assert len(report.updated) == 4
     assert charger.socket_1 in report.updated
 

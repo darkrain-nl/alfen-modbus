@@ -18,6 +18,12 @@ async def test_components_before_setup(connection: MockModbusConnection) -> None
         await charger.async_update(charger.components)
 
 
+async def test_sockets_before_setup(connection: MockModbusConnection) -> None:
+    charger = AlfenCharger(connection.for_unit)
+    with pytest.raises(RuntimeError, match="async_setup"):
+        await charger.async_update(charger.sockets)
+
+
 async def test_setup_runs_once(
     connection: MockModbusConnection, station: MockModbusUnit
 ) -> None:

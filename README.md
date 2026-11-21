@@ -22,7 +22,7 @@ The station only answers once Modbus is switched on in the ACE Service Installer
 - **Validity time** (default 60 s) is how long a written max current holds before
   the station falls back to its safe current. Rewrite the setpoint more often.
 
-The station accepts two Modbus TCP clients at once, on port 502. Station-wide
+The station accepts two Modbus TCP clients at once, on port 502 (`MODBUS_PORT`). Station-wide
 registers are on unit 200; each socket's are on unit 1 or 2.
 
 ## Usage
@@ -55,8 +55,8 @@ asyncio.run(main())
 ```
 
 `async_update()` polls the sub-systems you pass, so a caller that only needs
-the sockets passes `(charger.socket_1, charger.socket_2)` and skips the rest.
-`charger.components` lists every sub-system the station has; it raises until
+the sockets passes `charger.sockets` and skips the rest.
+`charger.components` lists every sub-system the station has. Both raise until
 `async_setup()` has run, since only setup knows about socket 2 and the SCN.
 
 The returned `PollReport` is keyed by those same objects: `updated` holds the
