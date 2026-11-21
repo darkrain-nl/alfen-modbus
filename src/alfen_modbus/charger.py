@@ -18,6 +18,9 @@ from .scn import SmartChargingNetwork
 from .sockets import Socket
 from .station import StationClock, StationIdentity, StationStatus
 
+MODBUS_PORT: Final = 502
+"""The Modbus TCP port; the station serves no other."""
+
 STATION_UNIT: Final = 200
 """The Modbus unit serving the station-wide registers."""
 
@@ -62,6 +65,16 @@ class AlfenCharger:
         self.scn = await read_optional(SmartChargingNetwork(self._station))
         # Set last, so a failed run is retried on the next call.
         self._setup_done = True
+
+    @property
+    def sockets(self) -> tuple[Socket, ...]:
+        """The station's one or two sockets."""
+        # Before setup, socket 2 would be missing silently.
+        if not self._setup_done:
+            raise RuntimeError("sockets are unknown until async_setup()")
+        return tuple(
+            socket for socket in (self.socket_1, self.socket_2) if socket is not None
+        )
 
     @property
     def components(self) -> tuple[Pollable, ...]:
