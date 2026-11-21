@@ -63,6 +63,10 @@ The returned `PollReport` is keyed by those same objects: `updated` holds the
 ones that refreshed and `failed` maps the rest to their error. A lost connection
 raises, and so does a timeout before anything has answered.
 
+To check which station answers at an address before setting one up, as a
+config flow does, `await StationIdentity.async_detect(unit)` reads the identity
+over a unit on `STATION_UNIT` alone.
+
 A value the station reports as NaN decodes to `None`.
 Stations with a Reallin meter (built from 2021) leave four sums NaN:
 `current_sum`, `apparent_power_sum`, `reactive_power_sum` and

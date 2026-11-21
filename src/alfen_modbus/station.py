@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from typing import Self
 
+from modbus_connection import ModbusUnit
 from modbus_connection.model import Component, boolean, float32, integer, string, uint64
 
 from .model import NAN
@@ -18,6 +20,17 @@ class StationIdentity(Component):
     firmware_version = string(123, 17)
     platform_type = string(140, 17)
     serial_number = string(157, 11)
+
+    @classmethod
+    async def async_detect(cls, unit: ModbusUnit) -> Self:
+        """Read the identity of a station not set up yet.
+
+        For a caller that has only a unit on ``STATION_UNIT``, such as a
+        config flow checking which station answers at an address.
+        """
+        identity = cls(unit)
+        await identity.async_update(notify=False)
+        return identity
 
 
 class StationClock(Component):

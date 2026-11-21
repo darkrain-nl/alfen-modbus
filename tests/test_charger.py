@@ -7,11 +7,13 @@ from modbus_connection import IllegalDataAddressError
 from modbus_connection.mock import MockModbusConnection, MockModbusUnit
 
 from alfen_modbus import (
+    STATION_UNIT,
     AlfenCharger,
     ChargingPhases,
     MeterState,
     MeterType,
     Mode3State,
+    StationIdentity,
 )
 
 from .conftest import NAN_32, poll_all
@@ -27,6 +29,12 @@ async def test_identity(connection: MockModbusConnection) -> None:
     assert identity.firmware_version == "6.4.0-4210"
     assert identity.platform_type == "NG920"
     assert identity.serial_number == "ACE0012345"
+
+
+async def test_identity_detect(connection: MockModbusConnection) -> None:
+    identity = await StationIdentity.async_detect(connection.for_unit(STATION_UNIT))
+    assert identity.serial_number == "ACE0012345"
+    assert identity.name == "ALF_1000"
 
 
 async def test_clock(connection: MockModbusConnection) -> None:
