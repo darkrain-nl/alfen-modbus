@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Final
@@ -16,7 +17,7 @@ from modbus_connection.model import Component, ComponentGroup, read_optional
 
 from .model import HoldCheck
 from .scn import SmartChargingNetwork
-from .sockets import Socket
+from .sockets import Socket, SocketStatus
 from .station import StationClock, StationIdentity, StationStatus
 
 MODBUS_PORT: Final = 502
@@ -26,6 +27,8 @@ STATION_UNIT: Final = 200
 """The Modbus unit serving the station-wide registers."""
 
 type Pollable = Component | ComponentGroup
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,6 +69,14 @@ class AlfenCharger:
         if self.status.socket_count == 2:
             self.socket_2 = Socket(self._for_unit(2), 2)
         self.scn = await read_optional(SmartChargingNetwork(self._station))
+        _LOGGER.debug(
+            "%s is a %s on firmware %s, with %s socket(s); SCN %s",
+            self.identity.serial_number,
+            self.identity.platform_type,
+            self.identity.firmware_version,
+            self.status.socket_count,
+            "refused" if self.scn is None else "served",
+        )
         # Set last, so a failed run is retried on the next call.
         self._setup_done = True
 
@@ -129,17 +140,50 @@ class AlfenCharger:
             else:
                 report.updated.add(component)
         # A held setpoint lapses to the safe current unless resent in time.
-        for component in report.updated:
-            if not isinstance(component, Socket | SmartChargingNetwork):
-                continue
-            try:
-                if await component.async_keep_hold() is HoldCheck.TAKEN_OVER:
-                    report.setpoint_taken_over.add(component)
-            except ModbusConnectionError:
-                raise
-            except ModbusError as err:
-                report.rewrite_failed[component] = err
+        for socket in self.sockets:
+            if socket in report.updated:
+                await self._async_keep_hold(
+                    report, socket, socket.status, f"socket {socket.number}"
+                )
+        if self.scn is not None and self.scn in report.updated:
+            await self._async_keep_hold(report, self.scn, self.scn, "the SCN")
         # Listeners fire once every read is in, so they see one poll.
         for component in report.updated:
             component.notify()
         return report
+
+    async def _async_keep_hold(
+        self,
+        report: PollReport,
+        component: Pollable,
+        holder: SocketStatus | SmartChargingNetwork,
+        label: str,
+    ) -> None:
+        """Resend one held setpoint if due, and record the outcome."""
+        try:
+            check = await holder.async_keep_hold()
+        except ModbusConnectionError:
+            raise
+        except ModbusError as err:
+            report.rewrite_failed[component] = err
+            _LOGGER.debug(
+                "%s: resending %s's held max current failed: %s",
+                self.identity.serial_number,
+                label,
+                err,
+            )
+            return
+        if check is HoldCheck.TAKEN_OVER:
+            report.setpoint_taken_over.add(component)
+            _LOGGER.debug(
+                "%s: %s reads a max current we did not write, with time "
+                "left; another client wrote it, so the hold is dropped",
+                self.identity.serial_number,
+                label,
+            )
+        elif check is HoldCheck.RESEND:
+            _LOGGER.debug(
+                "%s: resent %s's held max current before it lapsed",
+                self.identity.serial_number,
+                label,
+            )

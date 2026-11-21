@@ -157,7 +157,3 @@ class Socket(ComponentGroup):
         self.meter = SocketMeter(unit)
         self.status = SocketStatus(unit)
         super().__init__(unit, (self.meter, self.status))
-
-    async def async_keep_hold(self) -> HoldCheck:
-        """Resend the socket's held max current if due."""
-        return await self.status.async_keep_hold()

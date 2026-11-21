@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -96,14 +97,29 @@ async def test_single_socket(
 
 
 async def test_scn_refused(
-    connection: MockModbusConnection, station: MockModbusUnit
+    connection: MockModbusConnection,
+    station: MockModbusUnit,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
+    caplog.set_level(logging.DEBUG, "alfen_modbus")
     station.fail_read(1400, IllegalDataAddressError())
     charger = AlfenCharger(connection.for_unit)
     report = await poll_all(charger)
     assert charger.scn is None
     assert len(report.updated) == 4
     assert charger.socket_2 in report.updated
+    assert "with 2 socket(s); SCN refused" in caplog.text
+
+
+async def test_setup_logged(
+    connection: MockModbusConnection, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG, "alfen_modbus")
+    await AlfenCharger(connection.for_unit).async_setup()
+    assert (
+        "ACE0012345 is a NG920 on firmware 6.4.0-4210, with 2 socket(s); SCN served"
+        in caplog.text
+    )
 
 
 async def test_scn(connection: MockModbusConnection) -> None:
